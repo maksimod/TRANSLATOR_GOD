@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teams Subtitle Translator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        width: 300px;
+      }
+      #subtitles {
+        white-space: pre-line;
+        margin-top: 10px;
+      }
+      label {
+        display: block;
+        margin: 10px 0 5px;
+      }
+      select,
+      button {
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 10px;
+      }
+      .toggle-container {
+        display: flex;
+        align-items: center;
+        margin: 15px 0;
+      }
+      .toggle-label {
+        margin-right: 10px;
+      }
+      .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 30px;
+      }
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+        border-radius: 34px;
+      }
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 22px;
+        width: 22px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+      }
+      input:checked + .toggle-slider {
+        background-color: #2196F3;
+      }
+      input:checked + .toggle-slider:before {
+        transform: translateX(30px);
+      }
+      .status {
+        margin-top: 15px;
+        padding: 8px;
+        border-radius: 4px;
+        text-align: center;
+        font-weight: bold;
+      }
+      .status.active {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .status.inactive {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .section-header {
+        font-weight: bold;
+        margin-top: 15px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+        color: #333;
+      }
+      .tooltip {
+        position: relative;
+        display: inline-block;
+        margin-left: 5px;
+        cursor: help;
+      }
+      .tooltip-icon {
+        color: #2196F3;
+        font-weight: bold;
+        font-size: 12px;
+        width: 14px;
+        height: 14px;
+        border: 1px solid #2196F3;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .tooltip-text {
+        visibility: hidden;
+        width: 200px;
+        background-color: #555;
+        color: #fff;
+        text-align: center;
+        border-radius: 6px;
+        padding: 5px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -100px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-weight: normal;
+        font-size: 12px;
+      }
+      .tooltip:hover .tooltip-text {
+        visibility: visible;
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Teams Subtitle Translator</h3>
+    
+    <div class="toggle-container">
+      <span class="toggle-label">Translation:</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="translationToggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    
+    <div id="statusMessage" class="status inactive">Translation is OFF</div>
+    
+    <div class="section-header">Languages</div>
+    
+    <label for="inputLang">Input Language:</label>
+    <select id="inputLang">
+      <option value="auto">Auto Detect</option>
+      <option value="ru">Russian</option>
+      <option value="en">English</option>
+      <option value="es">Spanish</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="it">Italian</option>
+      <option value="ja">Japanese</option>
+      <option value="ko">Korean</option>
+      <option value="zh">Chinese</option>
+      <option value="pt">Portuguese</option>
+      <option value="ar">Arabic</option>
+    </select>
+
+    <label for="outputLang">Output Language:</label>
+    <select id="outputLang">
+      <option value="ru">Russian</option>
+      <option value="en">English</option>
+      <option value="es">Spanish</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="it">Italian</option>
+      <option value="ja">Japanese</option>
+      <option value="ko">Korean</option>
+      <option value="zh">Chinese</option>
+      <option value="pt">Portuguese</option>
+      <option value="ar">Arabic</option>
+    </select>
+
+    <button id="applyButton">Apply Settings</button>
+    
+    <!-- Reference the external JavaScript file -->
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Teams Live Subtitle Translator",
+  "version": "1.0",
+  "description": "Translates live subtitles in Microsoft Teams using OpenAI API.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://teams.microsoft.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://teams.microsoft.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [".env"],
+      "matches": ["https://teams.microsoft.com/*"]
+    }
+  ]
+}
