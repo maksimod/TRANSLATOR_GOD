@@ -25,7 +25,7 @@ const Config = {
   
   // Performance and stability
   MAX_STORED_UTTERANCES: 10,     // Limit for utterances per speaker
-  SUBTITLE_PROCESSING_INTERVAL: 500, // Wait 500ms before processing subtitle changes
+  SUBTITLE_PROCESSING_INTERVAL: 2000, // Wait 2 seconds before processing subtitle changes
   OBSERVER_UPDATE_INTERVAL: 30000, // Health check interval for observer
   
   // API settings

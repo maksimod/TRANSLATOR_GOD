@@ -10,6 +10,7 @@ let lastApiRequestTime = 0; // Track last API request time for rate limiting
 let activeTimers = {}; // Track active timers for each speaker
 let lastTranslatedText = {}; // Track the last text we translated for each speaker
 let lastProcessedTime = {}; // Track when we last processed text for each speaker
+let pendingTranslations = {}; // Track pending translations for each speaker
 
 // Check if enough time has passed since the last translation
 function hasTimePassedForTranslation(speakerId) {
@@ -58,24 +59,33 @@ async function translateText(speakerId, text, inputLang, outputLang) {
   if (text === prevTranslatedText && partialTranslations[speakerId]) {
     return partialTranslations[speakerId];
   }
+
+  // Deduplicate requests by normalizing text
+  const normalizedText = text.trim().replace(/[.,!?]$/, '');
+  if (normalizedText === prevTranslatedText?.trim().replace(/[.,!?]$/, '') && partialTranslations[speakerId]) {
+    return partialTranslations[speakerId];
+  }
+
+  // If there's a pending translation for this speaker, update the text and return current partial
+  if (pendingTranslations[speakerId]) {
+    pendingTranslations[speakerId].text = text;
+    return partialTranslations[speakerId] || "Translating...";
+  }
   
   // Check if enough time has passed since last translation
   if (!hasTimePassedForTranslation(speakerId)) {
-    debugLog(`Too soon to translate, waiting ${Config.SUBTITLE_PROCESSING_INTERVAL}ms: ${text}`);
     return partialTranslations[speakerId] || "Translating...";
   }
 
-  // Rate limit API requests
+  // Strict rate limiting for API requests
   const now = Date.now();
-  if (now - lastApiRequestTime < Config.API_RATE_LIMIT) {
-    debugLog(`Rate limited, waiting ${Config.API_RATE_LIMIT - (now - lastApiRequestTime)}ms`);
+  if (now - lastApiRequestTime < Config.SUBTITLE_PROCESSING_INTERVAL) {
     return partialTranslations[speakerId] || "Translating...";
   }
 
   // If there's already a translation in progress for this speaker,
   // return the current partial translation
   if (translationInProgress[speakerId]) {
-    debugLog(`Translation already in progress for speaker`);
     return partialTranslations[speakerId] || "Translating...";
   }
   
@@ -84,9 +94,10 @@ async function translateText(speakerId, text, inputLang, outputLang) {
   
   // Mark this translation as in progress
   translationInProgress[speakerId] = { text };
+  pendingTranslations[speakerId] = { text };
   
   try {
-    debugLog(`Translating for ${speakerId}: ${text}`);
+    debugLog(`[TRANSLATION START] Speaker: ${speakerId}, Text: "${text}", Time: ${new Date(now).toISOString()}`);
     
     // Always update UI with "Translating..." as a feedback to the user
     updateActiveSpeakerTranslation(speakerId, "Translating...");
@@ -96,15 +107,28 @@ async function translateText(speakerId, text, inputLang, outputLang) {
       model: Config.MODEL_NAME,
       messages: [
         {
-          role: "system",
-          content: `You are a translation assistant. Translate text from ${inputLang} to ${outputLang} concisely and accurately. Keep the translation direct and maintain the same style and tone.`
-        },
-        {
           role: "user",
           content: text
         }
       ],
-      temperature: 0.3 // Lower temperature for more consistent translations
+      functions: [
+        {
+          name: "translate",
+          description: `Translate text from ${inputLang} to ${outputLang}`,
+          parameters: {
+            type: "object",
+            properties: {
+              translated_text: {
+                type: "string",
+                description: "The translated text"
+              }
+            },
+            required: ["translated_text"]
+          }
+        }
+      ],
+      function_call: { name: "translate" },
+      temperature: 0.3
     };
     
     // Add timeout using AbortController
@@ -133,11 +157,16 @@ async function translateText(speakerId, text, inputLang, outputLang) {
       const data = await response.json();
       
       // Verify that the response has the expected structure
-      if (!data || !data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+      if (!data || !data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.function_call) {
         throw new Error("Invalid response structure from API");
       }
       
-      const translatedText = data.choices[0].message.content.trim();
+      const functionCall = data.choices[0].message.function_call;
+      if (functionCall.name !== "translate") {
+        throw new Error("Unexpected function call response");
+      }
+      
+      const translatedText = JSON.parse(functionCall.arguments).translated_text.trim();
       
       // Add to cache
       translationCache.set(cacheKey, translatedText);
@@ -148,8 +177,9 @@ async function translateText(speakerId, text, inputLang, outputLang) {
       // Update active speaker with the new translation
       updateActiveSpeakerTranslation(speakerId, translatedText);
       
-      // Clear in-progress flag
+      // Clear in-progress and pending flags
       delete translationInProgress[speakerId];
+      delete pendingTranslations[speakerId];
       
       // Limit cache size to avoid memory leaks
       if (translationCache.size > 500) {
@@ -169,8 +199,9 @@ async function translateText(speakerId, text, inputLang, outputLang) {
     console.error("Translation error:", error);
     debugLog(`Translation error: ${error.message}`);
     
-    // Clear in-progress flag
+    // Clear in-progress and pending flags
     delete translationInProgress[speakerId];
+    delete pendingTranslations[speakerId];
     
     // Return the last partial translation if we have one
     if (partialTranslations[speakerId]) {
@@ -216,7 +247,7 @@ async function checkApiConnection() {
   try {
     // Add timeout using AbortController
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), Config.API_CHECK_TIMEOUT);
     
     try {
       // Make a simpler request to verify API access
