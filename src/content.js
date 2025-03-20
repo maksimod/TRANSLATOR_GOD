@@ -20,6 +20,10 @@ import {
   resetKnownSubtitles
 } from './subtitle-processor.js';
 
+
+const update_time = 1000;
+const UPDATE_PERIOD = 250;
+
 // Wrap the entire script in a self-executing function to avoid global scope pollution
 (async function () {
   // Check if the script has already run
@@ -172,7 +176,7 @@ import {
     // Force an immediate update
     setTimeout(() => {
       updateTranslationsDisplay(getTranslatedUtterances(), getActiveSpeakers());
-    }, 100);
+    }, update_time);
     
     return { status: "success" };
   }
@@ -280,7 +284,7 @@ import {
   }
   
   // Listen for messages from the popup
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.action === "startTranslation") {
       // Update language settings
       inputLang = message.inputLang || Config.DEFAULT_INPUT_LANG;
@@ -359,7 +363,7 @@ import {
           getActiveSpeakers()
         );
       }
-    }, 250); // Update 4 times per second
+    }, UPDATE_PERIOD); // Update 4 times per second
   }
   
   // Start display updates

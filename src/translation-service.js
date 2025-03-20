@@ -11,9 +11,6 @@ let translationCache = new Map(); // Cache for translations to avoid duplicate r
 let partialTranslations = {}; // For storing partial translations to be shown in the UI
 let translationInProgress = {}; // Track if translation is currently in progress
 
-// Use a reasonable throttling time to avoid API rate limits
-const REDUCED_THROTTLE_TIME = 1000; // 1 second instead of default 1500ms
-
 /**
  * Translate text using OpenAI API
  * @param {string} speakerId - ID of the speaker
@@ -46,13 +43,10 @@ async function translateText(speakerId, text, inputLang, outputLang) {
     return partialTranslations[speakerId] || "Translating...";
   }
   
-  // Use a more aggressive throttling for frequent updates
-  const throttleTime = REDUCED_THROTTLE_TIME;
-  
   // Check if we need to throttle this translation request
   const now = Date.now();
   if (lastTranslationRequestTime[speakerId] && 
-      now - lastTranslationRequestTime[speakerId] < throttleTime) {
+      now - lastTranslationRequestTime[speakerId] < Config.TRANSLATION_THROTTLE) {
     // If there's already a pending translation for this speaker, replace it
     if (pendingTranslations[speakerId]) {
       pendingTranslations[speakerId].text = text;
@@ -66,7 +60,7 @@ async function translateText(speakerId, text, inputLang, outputLang) {
     }
     
     // Schedule a translation for later
-    const timeToWait = throttleTime - (now - lastTranslationRequestTime[speakerId]);
+    const timeToWait = Config.TRANSLATION_THROTTLE - (now - lastTranslationRequestTime[speakerId]);
     
     pendingTranslations[speakerId] = { 
       text,

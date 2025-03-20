@@ -15,18 +15,13 @@ let translatedUtterances = {}; // Map of speaker ID to their latest utterance
 let isClearing = false; // Flag to prevent clearing and adding simultaneously
 let lastProcessedTime = 0; // Track when we last processed subtitles
 
+let clearSubtitleData_delay = 500;
+
 // Speaker identification cache
-let speakerNameCache = {}; // Cache speaker names by DOM elements
 let lastFullTextBySpeaker = {}; // Track last complete text by speaker to avoid duplicates
 
 // Timers for delaying translations
 let translationTimers = {};
-
-// Minimum length for translation
-const MIN_LENGTH_FOR_TRANSLATION = 2;
-
-// Reasonable translation update interval - not too frequent
-const TRANSLATION_UPDATE_INTERVAL = 1000; // 1 second minimum between translation requests
 
 /**
  * Reset known subtitles to avoid processing past items
@@ -317,7 +312,7 @@ function scheduleTranslation(speakerId, inputLang, outputLang) {
   
   // Schedule new translation immediately for first translation
   const initialDelay = activeSpeakers[speakerId] && activeSpeakers[speakerId].translatedText === "Translating..." ? 
-    0 : TRANSLATION_UPDATE_INTERVAL;
+    0 : Config.TRANSLATION_THROTTLE;
   
   translationTimers[speakerId] = setTimeout(() => {
     translateAndUpdateUtterance(speakerId, inputLang, outputLang);
@@ -336,14 +331,7 @@ async function translateAndUpdateUtterance(speakerId, inputLang, outputLang) {
   
   const utterance = activeSpeakers[speakerId];
   const textToTranslate = utterance.fullText;
-  
-  // Skip translating very short text
-  if (textToTranslate.length < MIN_LENGTH_FOR_TRANSLATION) {
-    utterance.translatedText = "...";
-    forceDisplayUpdate();
-    return;
-  }
-  
+
   debugLog(`Translating for ${speakerId}: ${textToTranslate.substring(0, 40)}...`);
   
   try {
@@ -379,7 +367,7 @@ async function translateAndUpdateUtterance(speakerId, inputLang, outputLang) {
           translationTimers[speakerId] = setTimeout(() => {
             translateAndUpdateUtterance(speakerId, inputLang, outputLang);
             delete translationTimers[speakerId];
-          }, TRANSLATION_UPDATE_INTERVAL);
+          }, Config.TRANSLATION_THROTTLE);
         }
       }
     }
@@ -390,7 +378,7 @@ async function translateAndUpdateUtterance(speakerId, inputLang, outputLang) {
       translationTimers[speakerId] = setTimeout(() => {
         translateAndUpdateUtterance(speakerId, inputLang, outputLang);
         delete translationTimers[speakerId];
-      }, TRANSLATION_UPDATE_INTERVAL);
+      }, Config.TRANSLATION_THROTTLE);
     }
   }
 }
@@ -513,7 +501,7 @@ function clearSubtitleData() {
     // Always reset the clearing flag
     setTimeout(() => {
       isClearing = false;
-    }, 500); // Short delay to prevent race conditions
+    }, clearSubtitleData_delay); // Short delay to prevent race conditions
   }
 }
 
