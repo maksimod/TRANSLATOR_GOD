@@ -456,16 +456,46 @@ function setupPopupEventListeners(updateTranslationsDisplay) {
     
     // Handle manual scrolling to disable auto-scroll
     if (subtitlesContainer) {
+      let userHasScrolled = false;
+      
       subtitlesContainer.addEventListener('wheel', function() {
         const autoScrollCheckbox = popupWindow.document.getElementById('auto-scroll-checkbox');
-        if (autoScrollCheckbox) {
-          // Determine if user scrolled away from bottom
-          const isNearBottom = subtitlesContainer.scrollHeight - subtitlesContainer.scrollTop - subtitlesContainer.clientHeight < 50;
-          
-          // Only turn off auto-scroll if user scrolls away from bottom
-          if (!isNearBottom && autoScrollCheckbox.checked) {
-            autoScrollCheckbox.checked = false;
-          }
+        if (!autoScrollCheckbox) return;
+        
+        // Get scroll position info
+        const isAtBottom = subtitlesContainer.scrollHeight - subtitlesContainer.scrollTop - subtitlesContainer.clientHeight < 50;
+        
+        // If scrolling up, disable auto-scroll
+        if (!isAtBottom) {
+          userHasScrolled = true;
+          autoScrollCheckbox.checked = false;
+        }
+        
+        // If scrolled to bottom, re-enable auto-scroll
+        if (isAtBottom && userHasScrolled) {
+          userHasScrolled = false;
+          autoScrollCheckbox.checked = true;
+        }
+      });
+      
+      // Also handle scroll events from scrollbar dragging
+      subtitlesContainer.addEventListener('scroll', function() {
+        const autoScrollCheckbox = popupWindow.document.getElementById('auto-scroll-checkbox');
+        if (!autoScrollCheckbox) return;
+        
+        // Get scroll position info
+        const isAtBottom = subtitlesContainer.scrollHeight - subtitlesContainer.scrollTop - subtitlesContainer.clientHeight < 50;
+        
+        // If not at bottom and was auto-scrolling, disable it
+        if (!isAtBottom && autoScrollCheckbox.checked) {
+          userHasScrolled = true;
+          autoScrollCheckbox.checked = false;
+        }
+        
+        // If scrolled to bottom manually, re-enable auto-scroll
+        if (isAtBottom && userHasScrolled) {
+          userHasScrolled = false;
+          autoScrollCheckbox.checked = true;
         }
       });
     }

@@ -62,6 +62,27 @@ const UPDATE_PERIOD = 250;
     clearSubtitleData();
     clearDebugLogs();
     clearTranslationTimers();
+    resetKnownSubtitles();
+    
+    // Reset all translation-related data
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    
+    // Reset connection status
+    connectionFailed = false;
+    connectionRetryCount = 0;
+    
+    if (connectionCheckTimer) {
+      clearTimeout(connectionCheckTimer);
+      connectionCheckTimer = null;
+    }
+    
+    if (safetyCheckTimer) {
+      clearInterval(safetyCheckTimer);
+      safetyCheckTimer = null;
+    }
     
     debugLog("All translations cleared");
   }
@@ -267,6 +288,7 @@ const UPDATE_PERIOD = 250;
       // Stop popup check and cleanup
       stopPopupCheck();
       setTranslationStatus(false);
+      closePopupWindow();
       
       // Stop safety checks
       if (safetyCheckTimer) {
@@ -279,6 +301,9 @@ const UPDATE_PERIOD = 250;
         clearTimeout(connectionCheckTimer);
         connectionCheckTimer = null;
       }
+      
+      // Clear all translation data
+      clearAllTranslations();
       
       return { status: "success" };
     }
