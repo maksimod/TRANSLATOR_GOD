@@ -25,11 +25,11 @@ const Config = {
   
   // Performance and stability
   MAX_STORED_UTTERANCES: 10,     // Limit for utterances per speaker
-  SUBTITLE_PROCESSING_INTERVAL: 0, // No rate limiting for subtitle processing
+  SUBTITLE_PROCESSING_INTERVAL: 500, // Wait 500ms before processing subtitle changes
   OBSERVER_UPDATE_INTERVAL: 30000, // Health check interval for observer
   
   // API settings
-  API_RATE_LIMIT: 500,          // Minimum time between API requests (ms)
+  API_RATE_LIMIT: 750,          // Base rate limit for API requests (ms)
   API_TIMEOUT: 8000,            // Timeout for API requests (ms)
   API_CHECK_TIMEOUT: 5000       // Timeout for API connection check (ms)
 };

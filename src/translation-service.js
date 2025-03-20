@@ -8,6 +8,22 @@ let translationCache = new Map(); // Cache for translations to avoid duplicate r
 let partialTranslations = {}; // For storing partial translations to be shown in the UI
 let lastApiRequestTime = 0; // Track last API request time for rate limiting
 let activeTimers = {}; // Track active timers for each speaker
+let lastTranslatedText = {}; // Track the last text we translated for each speaker
+let lastProcessedTime = {}; // Track when we last processed text for each speaker
+
+// Check if enough time has passed since the last translation
+function hasTimePassedForTranslation(speakerId) {
+  const now = Date.now();
+  const lastTime = lastProcessedTime[speakerId] || 0;
+  
+  // If enough time has passed since last processing
+  if (now - lastTime >= Config.SUBTITLE_PROCESSING_INTERVAL) {
+    lastProcessedTime[speakerId] = now;
+    return true;
+  }
+  
+  return false;
+}
 
 /**
  * Translate text using OpenAI API
@@ -27,7 +43,7 @@ async function translateText(speakerId, text, inputLang, outputLang) {
   // Check cache first
   if (translationCache.has(cacheKey)) {
     const cachedTranslation = translationCache.get(cacheKey);
-    debugLog(`Using cached translation for: ${text.substring(0, 30)}...`);
+    debugLog(`Using cached translation for: ${text}`);
     
     // Update active speakers immediately with the cached translation
     updateActiveSpeakerTranslation(speakerId, cachedTranslation);
@@ -35,26 +51,45 @@ async function translateText(speakerId, text, inputLang, outputLang) {
     return cachedTranslation;
   }
 
-  // Rate limit API requests
-  const now = Date.now();
-  if (now - lastApiRequestTime < 500) { // Minimum 500ms between requests
+  // Check if we have previously translated text for this speaker
+  const prevTranslatedText = lastTranslatedText[speakerId] || '';
+  
+  // If text hasn't changed, return previous translation
+  if (text === prevTranslatedText && partialTranslations[speakerId]) {
+    return partialTranslations[speakerId];
+  }
+  
+  // Check if enough time has passed since last translation
+  if (!hasTimePassedForTranslation(speakerId)) {
+    debugLog(`Too soon to translate, waiting ${Config.SUBTITLE_PROCESSING_INTERVAL}ms: ${text}`);
     return partialTranslations[speakerId] || "Translating...";
   }
 
-  // If there's already a translation in progress for this speaker with the same text,
-  // return the current partial translation or "Translating..."
-  if (translationInProgress[speakerId] && translationInProgress[speakerId].text === text) {
+  // Rate limit API requests
+  const now = Date.now();
+  if (now - lastApiRequestTime < Config.API_RATE_LIMIT) {
+    debugLog(`Rate limited, waiting ${Config.API_RATE_LIMIT - (now - lastApiRequestTime)}ms`);
     return partialTranslations[speakerId] || "Translating...";
   }
+
+  // If there's already a translation in progress for this speaker,
+  // return the current partial translation
+  if (translationInProgress[speakerId]) {
+    debugLog(`Translation already in progress for speaker`);
+    return partialTranslations[speakerId] || "Translating...";
+  }
+  
+  // Update the last translated text for this speaker
+  lastTranslatedText[speakerId] = text;
   
   // Mark this translation as in progress
   translationInProgress[speakerId] = { text };
   
   try {
-    debugLog(`Translating for ${speakerId}: ${text.substring(0, 40)}...`);
+    debugLog(`Translating for ${speakerId}: ${text}`);
     
     // Always update UI with "Translating..." as a feedback to the user
-    updateActiveSpeakerTranslation(speakerId, partialTranslations[speakerId] || "Translating...");
+    updateActiveSpeakerTranslation(speakerId, "Translating...");
     
     // Format proper request to API
     const requestBody = {
@@ -124,7 +159,6 @@ async function translateText(speakerId, text, inputLang, outputLang) {
       }
       
       debugLog(`Translation complete: ${translatedText.substring(0, 40)}...`);
-      debugLog(`Translation update: ${translatedText.substring(0, 40)}...`);
       
       return translatedText;
     } catch (fetchError) {
@@ -219,6 +253,7 @@ async function checkApiConnection() {
 function clearTranslationTimers() {
   // Reset translation states
   translationInProgress = {}; // Clear in-progress flags
+  lastTranslatedText = {}; // Clear last translated text
   
   // Clear all active timers
   Object.values(activeTimers).forEach(timer => {
