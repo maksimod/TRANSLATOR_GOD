@@ -500,6 +500,9 @@ function setupPopupEventListeners(updateTranslationsDisplay) {
       });
     }
     
+    // Setup scroll handling for both containers
+    setupDebugScrollHandling();
+    
     debugLog("Popup event listeners set up successfully");
   } catch (error) {
     console.error("Error setting up popup event listeners:", error);
@@ -548,8 +551,14 @@ function updateDebugLogs() {
       
       debugContainer.appendChild(fragment);
       
-      // Auto-scroll to bottom
-      debugContainer.scrollTop = debugContainer.scrollHeight;
+      // Check if auto-scroll is enabled
+      const autoScrollCheckbox = popupWindow.document.getElementById('auto-scroll-checkbox');
+      const shouldAutoScroll = autoScrollCheckbox && autoScrollCheckbox.checked;
+      
+      // Auto-scroll to bottom only if enabled
+      if (shouldAutoScroll) {
+        debugContainer.scrollTop = debugContainer.scrollHeight;
+      }
     }
   } catch (error) {
     console.error("Error updating debug logs:", error);
@@ -856,6 +865,61 @@ function closePopupWindow() {
   
   popupWindow = null;
   clearAccumulatedTranslations();
+}
+
+// Add debug container scroll handling
+function setupDebugScrollHandling() {
+  if (!isPopupAccessible()) return;
+  
+  try {
+    const debugContainer = popupWindow.document.getElementById('debug-container');
+    if (debugContainer) {
+      let userHasScrolled = false;
+      
+      debugContainer.addEventListener('wheel', function() {
+        const autoScrollCheckbox = popupWindow.document.getElementById('auto-scroll-checkbox');
+        if (!autoScrollCheckbox) return;
+        
+        // Get scroll position info
+        const isAtBottom = debugContainer.scrollHeight - debugContainer.scrollTop - debugContainer.clientHeight < 50;
+        
+        // If scrolling up, disable auto-scroll
+        if (!isAtBottom) {
+          userHasScrolled = true;
+          autoScrollCheckbox.checked = false;
+        }
+        
+        // If scrolled to bottom, re-enable auto-scroll
+        if (isAtBottom && userHasScrolled) {
+          userHasScrolled = false;
+          autoScrollCheckbox.checked = true;
+        }
+      });
+      
+      // Also handle scroll events from scrollbar dragging
+      debugContainer.addEventListener('scroll', function() {
+        const autoScrollCheckbox = popupWindow.document.getElementById('auto-scroll-checkbox');
+        if (!autoScrollCheckbox) return;
+        
+        // Get scroll position info
+        const isAtBottom = debugContainer.scrollHeight - debugContainer.scrollTop - debugContainer.clientHeight < 50;
+        
+        // If not at bottom and was auto-scrolling, disable it
+        if (!isAtBottom && autoScrollCheckbox.checked) {
+          userHasScrolled = true;
+          autoScrollCheckbox.checked = false;
+        }
+        
+        // If scrolled to bottom manually, re-enable auto-scroll
+        if (isAtBottom && userHasScrolled) {
+          userHasScrolled = false;
+          autoScrollCheckbox.checked = true;
+        }
+      });
+    }
+  } catch (error) {
+    console.error("Error setting up debug scroll handling:", error);
+  }
 }
 
 export {
