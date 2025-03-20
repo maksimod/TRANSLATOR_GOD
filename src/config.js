@@ -16,6 +16,9 @@ const Config = {
   // OpenAI model to use
   MODEL_NAME: "gpt-3.5-turbo-0125",
   
+  // Translation settings
+  TRANSLATION_SYSTEM_PROMPT: "Translate from {inputLang} to {outputLang}",
+  
   // Debug settings
   MAX_DEBUG_LOGS: 100,
   

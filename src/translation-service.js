@@ -97,7 +97,9 @@ async function translateText(speakerId, text, inputLang, outputLang) {
       messages: [
         {
           role: "system",
-          content: `You are a translation assistant. Translate text from ${inputLang} to ${outputLang} concisely and accurately. Keep the translation direct and maintain the same style and tone.`
+          content: Config.TRANSLATION_SYSTEM_PROMPT
+            .replace("{inputLang}", inputLang)
+            .replace("{outputLang}", outputLang)
         },
         {
           role: "user",
