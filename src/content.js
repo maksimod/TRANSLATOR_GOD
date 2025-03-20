@@ -43,6 +43,7 @@ const UPDATE_PERIOD = 250;
   let connectionFailed = false;
   let connectionRetryCount = 0;
   const MAX_CONNECTION_RETRIES = 3;
+  let connectionCheckTimer = null;
   
   // Expose the clearAllTranslations function to the window for use by the popup
   window.clearAllTranslations = function() {
@@ -97,6 +98,12 @@ const UPDATE_PERIOD = 250;
             alert("Failed to connect to translation API. Please check your API key or try again later.");
           }, 100);
         }
+      } else {
+        // Schedule another retry
+        if (connectionCheckTimer) {
+          clearTimeout(connectionCheckTimer);
+        }
+        connectionCheckTimer = setTimeout(verifyConnection, 2000 * connectionRetryCount);
       }
       
       return false;
@@ -111,6 +118,10 @@ const UPDATE_PERIOD = 250;
     
     // Reset known subtitles when starting to avoid translating old ones
     resetKnownSubtitles();
+    
+    // Reset connection status
+    connectionFailed = false;
+    connectionRetryCount = 0;
     
     // Verify API connection first
     const connectionValid = await verifyConnection();
@@ -261,6 +272,12 @@ const UPDATE_PERIOD = 250;
       if (safetyCheckTimer) {
         clearInterval(safetyCheckTimer);
         safetyCheckTimer = null;
+      }
+      
+      // Clear connection check timer
+      if (connectionCheckTimer) {
+        clearTimeout(connectionCheckTimer);
+        connectionCheckTimer = null;
       }
       
       return { status: "success" };

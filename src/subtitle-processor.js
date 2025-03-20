@@ -139,13 +139,6 @@ function processSubtitles(isTranslationActive, inputLang, outputLang) {
   if (!isTranslationActive || isClearing) {
     return;
   }
-  
-  // Rate limit processing to avoid performance issues
-  const now = Date.now();
-  if (now - lastProcessedTime < Config.DEBOUNCE_DELAY / 2) { // Half the default debounce delay for more frequent processing
-    return;
-  }
-  lastProcessedTime = now;
 
   // Select all subtitle containers - try multiple selectors to be more robust
   const subtitleSelectors = [
@@ -210,7 +203,7 @@ function processSubtitles(isTranslationActive, inputLang, outputLang) {
       // Check if this is a continued speech or a new one
       if (activeSpeakers[speakerId]) {
         // Update the time of the last segment
-        activeSpeakers[speakerId].lastTime = now;
+        activeSpeakers[speakerId].lastTime = Date.now();
         
         const hasContentChanged = activeSpeakers[speakerId].fullText !== text;
         
@@ -238,16 +231,16 @@ function processSubtitles(isTranslationActive, inputLang, outputLang) {
           finalizeSpeech(speakerId, inputLang, outputLang);
         }, Config.SPEECH_SEGMENT_TIMEOUT));
         
-        // Schedule translation with delay
-        scheduleTranslation(speakerId, inputLang, outputLang);
+        // Translate immediately without delay
+        translateAndUpdateUtterance(speakerId, inputLang, outputLang);
       } else {
         // This is a new speech
         activeSpeakers[speakerId] = {
           speaker: speakerName,
           fullText: text,
-          lastTime: now,
+          lastTime: Date.now(),
           translatedText: "Translating...",
-          utteranceId: now.toString(),
+          utteranceId: Date.now().toString(),
           active: true,
           avatar: speakerAvatar
         };
@@ -259,8 +252,8 @@ function processSubtitles(isTranslationActive, inputLang, outputLang) {
           finalizeSpeech(speakerId, inputLang, outputLang);
         }, Config.SPEECH_SEGMENT_TIMEOUT));
         
-        // Schedule translation with delay
-        scheduleTranslation(speakerId, inputLang, outputLang);
+        // Translate immediately without delay
+        translateAndUpdateUtterance(speakerId, inputLang, outputLang);
         
         // Immediately update display to show "Translating..." for this new speaker
         updateTranslationsDisplay(translatedUtterances, activeSpeakers);
@@ -310,14 +303,11 @@ function scheduleTranslation(speakerId, inputLang, outputLang) {
     forceDisplayUpdate();
   }
   
-  // Schedule new translation immediately for first translation
-  const initialDelay = activeSpeakers[speakerId] && activeSpeakers[speakerId].translatedText === "Translating..." ? 
-    0 : Config.TRANSLATION_THROTTLE;
-  
+  // Schedule new translation with throttle delay
   translationTimers[speakerId] = setTimeout(() => {
     translateAndUpdateUtterance(speakerId, inputLang, outputLang);
     delete translationTimers[speakerId];
-  }, initialDelay);
+  }, Config.TRANSLATION_THROTTLE);
 }
 
 /**
@@ -361,14 +351,6 @@ async function translateAndUpdateUtterance(speakerId, inputLang, outputLang) {
         
         // Force update of display
         forceDisplayUpdate();
-        
-        // If still active and text has changed, schedule another translation soon
-        if (activeSpeakers[speakerId].active && textToTranslate.length > 20) {
-          translationTimers[speakerId] = setTimeout(() => {
-            translateAndUpdateUtterance(speakerId, inputLang, outputLang);
-            delete translationTimers[speakerId];
-          }, Config.TRANSLATION_THROTTLE);
-        }
       }
     }
   } catch (error) {
