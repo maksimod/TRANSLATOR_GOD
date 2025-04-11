@@ -621,9 +621,9 @@ function createSpeakerAvatar(speakerName) {
 }
 
 /**
- * Update the translation display in the popup with accumulated translations
- * @param {Object} translatedUtterances - Map of speaker IDs to their latest utterances
- * @param {Object} activeSpeakers - Map of active speakers
+ * Update the translations display in the popup window
+ * @param {Object} translatedUtterances - Map of speaker IDs to arrays of utterances
+ * @param {Object} activeSpeakers - Map of speaker IDs to active speakers
  */
 function updateTranslationsDisplay(translatedUtterances, activeSpeakers) {
   if (!isPopupAccessible()) {
@@ -641,25 +641,42 @@ function updateTranslationsDisplay(translatedUtterances, activeSpeakers) {
     
     // Process finalized utterances and add them to accumulatedTranslations
     for (const speakerId in translatedUtterances) {
-      const utterance = translatedUtterances[speakerId];
-      if (utterance) {
-        // Initialize speaker object if needed
-        if (!accumulatedTranslations[speakerId]) {
-          accumulatedTranslations[speakerId] = {
-            speaker: utterance.speaker,
-            utterances: {}
-          };
-          
-          // Add to display order if new
-          if (!speakerDisplayOrder.includes(speakerId)) {
-            speakerDisplayOrder.push(speakerId);
-          }
+      // Handle the new array structure
+      const utterances = translatedUtterances[speakerId];
+      if (!utterances || !Array.isArray(utterances) || utterances.length === 0) {
+        continue;
+      }
+      
+      // Get the speaker name from the first utterance
+      const speakerName = utterances[0].speaker || "Unknown";
+      
+      // Initialize speaker object if needed
+      if (!accumulatedTranslations[speakerId]) {
+        accumulatedTranslations[speakerId] = {
+          speaker: speakerName,
+          utterances: {}
+        };
+        
+        // Add to display order if new
+        if (!speakerDisplayOrder.includes(speakerId)) {
+          speakerDisplayOrder.push(speakerId);
         }
+      }
+      
+      // Process each utterance in the array
+      for (const utterance of utterances) {
+        if (!utterance || !utterance.utteranceId) continue;
         
         // Update or add the utterance
-        accumulatedTranslations[speakerId].utterances[utterance.id] = {
-          ...utterance,
-          active: false // Finalized utterances are not active
+        accumulatedTranslations[speakerId].utterances[utterance.utteranceId] = {
+          id: utterance.utteranceId,
+          speaker: utterance.speaker || speakerName,
+          speakerId: speakerId,
+          original: utterance.fullText || "",
+          translated: utterance.translatedText || "Translating...",
+          timestamp: utterance.timestamp || new Date().toLocaleTimeString(),
+          active: utterance.active === true,
+          avatar: utterance.avatar
         };
       }
     }
@@ -695,7 +712,8 @@ function updateTranslationsDisplay(translatedUtterances, activeSpeakers) {
         original: speaker.fullText,
         translated: speaker.translatedText || "Translating...",
         timestamp: new Date().toLocaleTimeString(),
-        active: true
+        active: true,
+        avatar: speaker.avatar
       };
     }
     

@@ -11,6 +11,11 @@ let activeTimers = {}; // Track active timers for each speaker
 let lastTranslatedText = {}; // Track the last text we translated for each speaker
 let lastProcessedTime = {}; // Track when we last processed text for each speaker
 
+// Anti-loop detection
+let translationRepeatCount = {}; // Track how many times we've seen the same translation
+let lastTranslationBySpeaker = {}; // Last translation for each speaker
+const MAX_REPEAT_COUNT = 3; // Maximum number of times we allow the same translation before flagging as a loop
+
 // Check if enough time has passed since the last translation
 function hasTimePassedForTranslation(speakerId) {
   const now = Date.now();
@@ -23,6 +28,57 @@ function hasTimePassedForTranslation(speakerId) {
   }
   
   return false;
+}
+
+/**
+ * Detect and break out of translation loops
+ * @param {string} speakerId - The speaker ID
+ * @param {string} translatedText - The translated text
+ * @returns {boolean} - True if we detected a loop
+ */
+function detectAndBreakTranslationLoop(speakerId, translatedText) {
+  // Initialize repeat count if not exists
+  if (!translationRepeatCount[speakerId]) {
+    translationRepeatCount[speakerId] = 0;
+  }
+  
+  // If we have a previous translation for this speaker
+  if (lastTranslationBySpeaker[speakerId]) {
+    // If it's exactly the same as the current one
+    if (lastTranslationBySpeaker[speakerId] === translatedText) {
+      translationRepeatCount[speakerId]++;
+      
+      // If we've seen this exact translation too many times, flag as a loop
+      if (translationRepeatCount[speakerId] >= MAX_REPEAT_COUNT) {
+        debugLog(`Translation loop detected for speaker ${speakerId}: "${translatedText}"`);
+        return true;
+      }
+    } else {
+      // Different translation, reset counter
+      translationRepeatCount[speakerId] = 0;
+    }
+  }
+  
+  // Update last translation
+  lastTranslationBySpeaker[speakerId] = translatedText;
+  return false;
+}
+
+/**
+ * Reset translation loop detection for a speaker
+ * @param {string} speakerId - The speaker ID to reset
+ */
+function resetLoopDetection(speakerId) {
+  translationRepeatCount[speakerId] = 0;
+  delete lastTranslationBySpeaker[speakerId];
+}
+
+/**
+ * Clear all translation loop detection data
+ */
+function clearTranslationLoopData() {
+  translationRepeatCount = {};
+  lastTranslationBySpeaker = {};
 }
 
 /**
@@ -57,6 +113,11 @@ async function translateText(speakerId, text, inputLang, outputLang) {
   // If text hasn't changed, return previous translation
   if (text === prevTranslatedText && partialTranslations[speakerId]) {
     return partialTranslations[speakerId];
+  }
+  
+  // If the text has significantly changed, reset loop detection
+  if (prevTranslatedText && text.length > 0 && !text.includes(prevTranslatedText) && !prevTranslatedText.includes(text)) {
+    resetLoopDetection(speakerId);
   }
   
   // Check if enough time has passed since last translation
@@ -143,6 +204,25 @@ async function translateText(speakerId, text, inputLang, outputLang) {
       
       // Add to cache
       translationCache.set(cacheKey, translatedText);
+      
+      // Check for translation loops
+      if (detectAndBreakTranslationLoop(speakerId, translatedText)) {
+        // If a loop is detected, force a reset
+        delete translationInProgress[speakerId];
+        delete partialTranslations[speakerId];
+        delete lastTranslatedText[speakerId];
+        
+        // Return a different message to break the loop
+        const loopBreakMessage = "Translation temporarily unavailable. Please wait...";
+        updateActiveSpeakerTranslation(speakerId, loopBreakMessage);
+        
+        // Schedule a reset after a short delay
+        setTimeout(() => {
+          resetLoopDetection(speakerId);
+        }, 3000);
+        
+        return loopBreakMessage;
+      }
       
       // Update partial translations for this speaker
       partialTranslations[speakerId] = translatedText;
@@ -250,18 +330,28 @@ async function checkApiConnection() {
 }
 
 /**
- * Clear all active translation timers
+ * Clear all translation timers and related data
  */
 function clearTranslationTimers() {
-  // Reset translation states
-  translationInProgress = {}; // Clear in-progress flags
-  lastTranslatedText = {}; // Clear last translated text
-  
   // Clear all active timers
-  Object.values(activeTimers).forEach(timer => {
-    if (timer) clearTimeout(timer);
-  });
+  for (const speakerId in activeTimers) {
+    if (Object.prototype.hasOwnProperty.call(activeTimers, speakerId)) {
+      for (const type in activeTimers[speakerId]) {
+        if (Object.prototype.hasOwnProperty.call(activeTimers[speakerId], type)) {
+          clearTimeout(activeTimers[speakerId][type]);
+        }
+      }
+    }
+  }
+  
+  // Reset data structures
   activeTimers = {};
+  translationInProgress = {};
+  lastTranslatedText = {};
+  lastProcessedTime = {};
+  
+  // Clear loop detection data
+  clearTranslationLoopData();
 }
 
 /**

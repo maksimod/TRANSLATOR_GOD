@@ -207,10 +207,45 @@ function processSubtitles(isTranslationActive, inputLang, outputLang) {
         
         const hasContentChanged = activeSpeakers[speakerId].fullText !== text;
         
+        // Improved continuation detection: Check if the new text is a continuation
+        // of the existing text or if it contains the existing text
+        let isContinuation = false;
+        const existingText = activeSpeakers[speakerId].fullText;
+        
+        // Check if new text contains most of the old text (80% similarity threshold)
+        // or if old text contains most of the new text
+        if (existingText && text) {
+          // Check if either text contains a significant portion of the other
+          if (existingText.includes(text.substring(0, Math.floor(text.length * 0.8))) ||
+              text.includes(existingText.substring(0, Math.floor(existingText.length * 0.8)))) {
+            isContinuation = true;
+          }
+          
+          // If texts start with the same words (first 5 words match), consider it a continuation
+          const existingWords = existingText.split(' ');
+          const newWords = text.split(' ');
+          
+          if (existingWords.length >= 5 && newWords.length >= 5) {
+            const existingStart = existingWords.slice(0, 5).join(' ');
+            const newStart = newWords.slice(0, 5).join(' ');
+            
+            if (existingStart === newStart) {
+              isContinuation = true;
+            }
+          }
+        }
+        
         // Update the full text - use the newest, most complete text
-        if (text.length > activeSpeakers[speakerId].fullText.length || hasContentChanged) {
-          activeSpeakers[speakerId].fullText = text;
-          lastFullTextBySpeaker[speakerId] = text;
+        // But preserve continuation logic
+        if (isContinuation || text.length > activeSpeakers[speakerId].fullText.length || hasContentChanged) {
+          // For continuation, we need to be smarter about how we update the text
+          if (isContinuation && text.length < existingText.length) {
+            // Keep the existing, longer text
+            // Don't update fullText at all
+          } else {
+            activeSpeakers[speakerId].fullText = text;
+            lastFullTextBySpeaker[speakerId] = text;
+          }
           
           // Also update avatar if available
           if (speakerAvatar && !activeSpeakers[speakerId].avatar) {
@@ -367,87 +402,175 @@ async function translateAndUpdateUtterance(speakerId, inputLang, outputLang) {
 
 /**
  * Update the map of translated utterances
- * @param {string} speakerId - Speaker ID
- * @param {object} utterance - Utterance object
+ * @param {string} speakerId - ID of the speaker
+ * @param {Object} utterance - The utterance to add
  */
 function updateTranslatedUtterancesMap(speakerId, utterance) {
-  // Just replace the current utterance for this speaker
-  translatedUtterances[speakerId] = utterance;
+  // Initialize array for this speaker if it doesn't exist
+  if (!translatedUtterances[speakerId]) {
+    translatedUtterances[speakerId] = [];
+  }
+  
+  // Check if this utterance ID already exists (to avoid duplicates)
+  const existingIndex = translatedUtterances[speakerId].findIndex(u => u.utteranceId === utterance.utteranceId);
+  
+  if (existingIndex !== -1) {
+    // Update existing utterance
+    translatedUtterances[speakerId][existingIndex] = {
+      ...translatedUtterances[speakerId][existingIndex],
+      ...utterance,
+      lastUpdated: Date.now()
+    };
+  } else {
+    // Add a timestamp to the utterance
+    const timestampedUtterance = {
+      ...utterance,
+      timestamp: new Date().toLocaleTimeString(),
+      lastUpdated: Date.now()
+    };
+    
+    // Add to the array for this speaker
+    translatedUtterances[speakerId].push(timestampedUtterance);
+    
+    // Cap the array size to avoid memory issues
+    const maxUtterances = Config.MAX_STORED_UTTERANCES || 10;
+    if (translatedUtterances[speakerId].length > maxUtterances) {
+      translatedUtterances[speakerId] = translatedUtterances[speakerId].slice(-maxUtterances);
+    }
+  }
+  
+  // After any update to the utterances map, check for and fix any inconsistencies
+  validateUtterancesMap();
 }
 
 /**
- * Finalize a speech (mark it as complete)
+ * Validate and fix inconsistencies in the utterances map
+ */
+function validateUtterancesMap() {
+  try {
+    // Iterate through all speakers in the map
+    for (const speakerId in translatedUtterances) {
+      if (!translatedUtterances[speakerId] || !Array.isArray(translatedUtterances[speakerId])) {
+        // Fix: convert non-array values to arrays
+        if (translatedUtterances[speakerId] && typeof translatedUtterances[speakerId] === 'object') {
+          // Convert single object to array
+          translatedUtterances[speakerId] = [translatedUtterances[speakerId]];
+        } else {
+          // Reset to empty array if invalid
+          translatedUtterances[speakerId] = [];
+        }
+      }
+      
+      // Ensure no duplicates by utteranceId
+      const utteranceIds = new Set();
+      translatedUtterances[speakerId] = translatedUtterances[speakerId].filter(utterance => {
+        if (!utterance || !utterance.utteranceId) return false;
+        
+        if (utteranceIds.has(utterance.utteranceId)) {
+          return false; // Skip duplicates
+        }
+        
+        utteranceIds.add(utterance.utteranceId);
+        return true;
+      });
+      
+      // Sort by lastUpdated or timestamp (most recent first)
+      translatedUtterances[speakerId].sort((a, b) => {
+        const timeA = a.lastUpdated || (a.timestamp ? new Date(a.timestamp).getTime() : 0);
+        const timeB = b.lastUpdated || (b.timestamp ? new Date(b.timestamp).getTime() : 0);
+        return timeB - timeA;
+      });
+    }
+  } catch (error) {
+    console.error("Error validating utterances map:", error);
+    debugLog(`Error validating utterances map: ${error.message}`);
+  }
+}
+
+/**
+ * Finalize a speech segment, marking it as complete
  * @param {string} speakerId - ID of the speaker
  * @param {string} inputLang - Input language
  * @param {string} outputLang - Output language
  */
 async function finalizeSpeech(speakerId, inputLang, outputLang) {
-  if (!activeSpeakers[speakerId]) return;
-  
-  // Get the final active utterance
-  const utterance = activeSpeakers[speakerId];
-  
-  // Cancel any pending translation
-  if (translationTimers[speakerId]) {
-    clearTimeout(translationTimers[speakerId]);
-    delete translationTimers[speakerId];
+  // Skip if the speaker is not active or if we're currently clearing
+  if (!activeSpeakers[speakerId] || isClearing) {
+    return;
   }
   
-  // If we haven't translated it yet, try once more
-  if (!utterance.translatedText || utterance.translatedText === "..." || utterance.translatedText === "Translating...") {
-    const translatedText = await translateText(speakerId, utterance.fullText, inputLang, outputLang);
-    if (translatedText) {
-      utterance.translatedText = translatedText;
-    } else {
-      utterance.translatedText = "[Translation unavailable]";
+  try {
+    debugLog(`Finalizing speech for ${speakerId}: "${activeSpeakers[speakerId].fullText}"`);
+    
+    // Get the current utterance
+    const currentUtterance = activeSpeakers[speakerId];
+    
+    // Check if this utterance is too long (exceeding max length)
+    // If so, finalize the current portion but don't mark as inactive
+    const maxLength = Config.MAX_SPEECH_SEGMENT_LENGTH || 1000;
+    const isExcessivelyLong = currentUtterance.fullText.length > maxLength;
+    
+    // Only do a final translation if needed
+    if (isExcessivelyLong || !currentUtterance.translatedText || currentUtterance.translatedText === "Translating...") {
+      // Do a final translation
+      const finalText = await translateText(
+        speakerId,
+        currentUtterance.fullText,
+        inputLang,
+        outputLang
+      );
+      
+      // Update the translated text
+      currentUtterance.translatedText = finalText;
     }
-  }
-  
-  // Only add to finalized utterances if we're not currently clearing
-  if (!isClearing) {
-    // Create a final utterance object
-    const finalUtterance = {
-      id: utterance.utteranceId,
-      speaker: utterance.speaker,
-      speakerId: speakerId,
-      original: utterance.fullText,
-      translated: utterance.translatedText,
-      timestamp: new Date().toLocaleTimeString(),
-      active: false,
-      avatar: utterance.avatar
-    };
     
-    // Update our map of translated utterances
-    updateTranslatedUtterancesMap(speakerId, finalUtterance);
+    // If the text is excessively long, truncate it for performance but keep the speaker active
+    if (isExcessivelyLong) {
+      // Create a new utterance ID for the next segment
+      const newUtteranceId = Date.now().toString();
+      
+      // Store the current utterance in the translated utterances map
+      updateTranslatedUtterancesMap(speakerId, {
+        ...currentUtterance,
+        active: false // Mark as inactive to show it's done
+      });
+      
+      // Keep the speaker active but start a fresh utterance
+      // Important: retain the original speaker information
+      activeSpeakers[speakerId] = {
+        speaker: currentUtterance.speaker,
+        fullText: "", // Start fresh for the next segment
+        lastTime: Date.now(),
+        translatedText: "Continuing...",
+        utteranceId: newUtteranceId,
+        active: true,
+        avatar: currentUtterance.avatar
+      };
+      
+      // Force a display update
+      updateTranslationsDisplay(translatedUtterances, activeSpeakers);
+      
+      // Don't finalize any further
+      return;
+    }
     
-    // Log the complete translation
-    debugLog(`Finalized speech: "${utterance.translatedText?.substring(0, 40) || 'n/a'}..."`);
-    debugLog(`Finalized speech from ${utterance.speaker}: "${utterance.fullText.substring(0, 40)}..."`);
+    // For normal utterances (not excessively long), proceed with finalization
+    updateTranslatedUtterancesMap(speakerId, {
+      ...currentUtterance,
+      active: false
+    });
+    
+    // Remove from active speakers (but only if we have a valid translation to show)
+    if (currentUtterance.translatedText && currentUtterance.translatedText !== "Translating...") {
+      delete activeSpeakers[speakerId];
+    }
+    
+    // Update UI
+    updateTranslationsDisplay(translatedUtterances, activeSpeakers);
+  } catch (error) {
+    console.error("Error finalizing speech:", error);
+    debugLog(`Error finalizing speech: ${error.message}`);
   }
-  
-  // Create new utterance ID for next time this speaker talks
-  const newId = Date.now().toString();
-  
-  // Create a new object for future utterances from this speaker
-  // This allows multiple utterances from the same speaker to be accumulated
-  const speakerInfo = {
-    speaker: utterance.speaker,
-    fullText: "",
-    lastTime: 0,
-    translatedText: "",
-    utteranceId: newId,
-    active: false,
-    avatar: utterance.avatar
-  };
-  
-  // Keep the speaker reference with new ID and empty content
-  activeSpeakers[speakerId] = speakerInfo;
-  
-  // Clear any related timers
-  clearActiveTimerForSpeaker(speakerId, 'finalize');
-  
-  // Update the display
-  forceDisplayUpdate();
 }
 
 /**
@@ -496,11 +619,25 @@ function getActiveSpeakers() {
 }
 
 /**
- * Get translated utterances
- * @returns {Object} - Map of speaker IDs to their latest utterances
+ * Get a map of all translated utterances
+ * @returns {Object} Map of speaker IDs to arrays of translated utterances
  */
 function getTranslatedUtterances() {
-  return translatedUtterances;
+  // Return a deep copy to avoid external modifications
+  const copy = {};
+  
+  for (const speakerId in translatedUtterances) {
+    if (translatedUtterances[speakerId] && Array.isArray(translatedUtterances[speakerId])) {
+      copy[speakerId] = [...translatedUtterances[speakerId]];
+    } else if (translatedUtterances[speakerId]) {
+      // Handle case where it might still be a single object (for backward compatibility)
+      copy[speakerId] = [translatedUtterances[speakerId]];
+    } else {
+      copy[speakerId] = [];
+    }
+  }
+  
+  return copy;
 }
 
 // Create a debounced version of processSubtitles
